@@ -268,6 +268,15 @@ export function IconPlay(p: IconProps) {
   );
 }
 
+export function IconRefresh(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+      <path d="M20 4v4h-4" />
+    </svg>
+  );
+}
+
 export function IconWarning(p: IconProps) {
   return (
     <svg {...base(p)}>

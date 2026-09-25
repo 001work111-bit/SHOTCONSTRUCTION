@@ -714,6 +714,28 @@ export function setGlobalSettings(
   };
 }
 
+/**
+ * Помечает ассеты пропавшими/доступными по результатам проверки путей на диске.
+ * Используется после загрузки проекта в desktop-режиме (Electron), чтобы не показывать битые <img>.
+ * В историю не пишется — это не редактирование проекта.
+ */
+export function setAssetAvailability(
+  state: ProjectState,
+  missingIds: ID[],
+  restoredIds: ID[] = []
+): ActionResult {
+  if (missingIds.length === 0 && restoredIds.length === 0) return { state, recordHistory: false };
+  const missing = new Set(missingIds);
+  const restored = new Set(restoredIds);
+  const assets = { ...state.assets };
+  for (const id of [...missingIds, ...restoredIds]) {
+    const a = assets[id];
+    if (!a) continue;
+    assets[id] = { ...a, missing: missing.has(id) && !restored.has(id) };
+  }
+  return { state: { ...state, assets }, recordHistory: false };
+}
+
 export function replaceProject(_state: ProjectState, next: ProjectState): ActionResult {
   return { state: { ...next, dirty: false, mode: 'edit' }, recordHistory: true };
 }

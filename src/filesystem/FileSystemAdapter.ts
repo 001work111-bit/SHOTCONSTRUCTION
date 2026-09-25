@@ -1,20 +1,48 @@
 import type { AssetMeta, FolderMeta, ID, ImageFormat } from '../core/types';
 import { SUPPORTED_IMAGE_EXTENSIONS, createId } from '../core/types';
+import { getDesktop, desktopAssetUrl } from '../desktop/api';
+import { isDesktopPathLike } from '../desktop/assetUrl';
+import type { ShotDesktopApi, DesktopCatalogResult } from '../desktop/api';
+
+/** Ссылка на файл на диске (режим Electron, путь абсолютный) */
+export interface DesktopFileRef {
+  kind: 'desktop';
+  path: string;
+  size?: number;
+}
+
+/** Источник байтов картинки: handle браузера, File из input/dnd или путь на диске */
+export type AssetSource = FileSystemFileHandle | File | DesktopFileRef;
+
+export function isDesktopFileRef(src: AssetSource | undefined): src is DesktopFileRef {
+  return !!src && (src as DesktopFileRef).kind === 'desktop';
+}
 
 export interface ScannedCatalog {
   rootName: string;
+  /** Абсолютный путь выбранной папки — только в режиме Electron */
+  rootPath?: string | null;
   folders: FolderMeta[];
   assets: AssetMeta[];
   /** Map sourceKey → raw handle/file for later reading */
-  handles: Map<string, FileSystemFileHandle | File>;
+  handles: Map<string, AssetSource>;
+  /** Каталог обрезан по лимиту (SHOT_MAX_IMAGES) */
+  truncated?: boolean;
+  skippedDirs?: string[];
 }
 
 export interface FileSystemAdapter {
   pickDirectory(): Promise<ScannedCatalog | null>;
   /** Create object URL for display; caller must revoke when done if needed */
-  getObjectUrl(sourceKey: string, handles: Map<string, FileSystemFileHandle | File>): Promise<string | null>;
-  readFileAsFile(sourceKey: string, handles: Map<string, FileSystemFileHandle | File>): Promise<File | null>;
+  getObjectUrl(sourceKey: string, handles: Map<string, AssetSource>): Promise<string | null>;
+  readFileAsFile(sourceKey: string, handles: Map<string, AssetSource>): Promise<File | null>;
   supportsDirectoryPicker(): boolean;
+  /** sourceKey == абсолютный путь на диске → переживает перезапуск и сохранение проекта */
+  usesAbsolutePaths(): boolean;
+  /** Пересканировать ту же папку без диалога (есть только в Electron) */
+  rescan?(): Promise<ScannedCatalog | null>;
+  /** Корень каталога, если уже выбран (нужен для repeat-scan и разрешения доступа) */
+  getCatalogRootPath?(): string | null;
 }
 
 function extOf(name: string): string {
@@ -48,6 +76,10 @@ function isImageFile(name: string): boolean {
 export class BrowserFileSystemAdapter implements FileSystemAdapter {
   supportsDirectoryPicker(): boolean {
     return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+  }
+
+  usesAbsolutePaths(): boolean {
+    return false;
   }
 
   async pickDirectory(): Promise<ScannedCatalog | null> {
@@ -86,7 +118,7 @@ export class BrowserFileSystemAdapter implements FileSystemAdapter {
   private async scanDirectoryHandle(root: FileSystemDirectoryHandle): Promise<ScannedCatalog> {
     const folders: FolderMeta[] = [];
     const assets: AssetMeta[] = [];
-    const handles = new Map<string, FileSystemFileHandle | File>();
+    const handles = new Map<string, AssetSource>();
 
     // Root-level images go into a virtual folder with root name
     const rootFolderId = createId('folder');
@@ -178,7 +210,7 @@ export class BrowserFileSystemAdapter implements FileSystemAdapter {
   private scanFileList(fileList: FileList): ScannedCatalog {
     const foldersMap = new Map<string, FolderMeta>();
     const assets: AssetMeta[] = [];
-    const handles = new Map<string, FileSystemFileHandle | File>();
+    const handles = new Map<string, AssetSource>();
 
     let rootName = 'Images';
     const paths: string[] = [];
@@ -251,10 +283,10 @@ export class BrowserFileSystemAdapter implements FileSystemAdapter {
 
   async getObjectUrl(
     sourceKey: string,
-    handles: Map<string, FileSystemFileHandle | File>
+    handles: Map<string, AssetSource>
   ): Promise<string | null> {
     const h = handles.get(sourceKey);
-    if (!h) return null;
+    if (!h || isDesktopFileRef(h)) return null;
     try {
       if (h instanceof File) {
         return URL.createObjectURL(h);
@@ -268,10 +300,10 @@ export class BrowserFileSystemAdapter implements FileSystemAdapter {
 
   async readFileAsFile(
     sourceKey: string,
-    handles: Map<string, FileSystemFileHandle | File>
+    handles: Map<string, AssetSource>
   ): Promise<File | null> {
     const h = handles.get(sourceKey);
-    if (!h) return null;
+    if (!h || isDesktopFileRef(h)) return null;
     try {
       if (h instanceof File) return h;
       return await h.getFile();
@@ -281,25 +313,159 @@ export class BrowserFileSystemAdapter implements FileSystemAdapter {
   }
 }
 
-/** Placeholder for future Electron adapter */
-export class ElectronFileSystemAdapter implements FileSystemAdapter {
+/**
+ * Desktop-адаптер (Electron): каталог сканирует main-процесс, картинки читаются
+ * с диска через схему `shotasset:`, sourceKey = абсолютный путь.
+ */
+export class DesktopFileSystemAdapter implements FileSystemAdapter {
+  private api: ShotDesktopApi;
+  private rootPath: string | null = null;
+
+  constructor(api: ShotDesktopApi) {
+    this.api = api;
+  }
+
   supportsDirectoryPicker(): boolean {
     return true;
   }
 
+  usesAbsolutePaths(): boolean {
+    return true;
+  }
+
+  getCatalogRootPath(): string | null {
+    return this.rootPath;
+  }
+
   async pickDirectory(): Promise<ScannedCatalog | null> {
-    throw new Error('ElectronFileSystemAdapter is not available in browser build');
+    const result = await this.api.pickCatalog();
+    return this.applyScanResult(result);
   }
 
-  async getObjectUrl(): Promise<string | null> {
+  async rescan(): Promise<ScannedCatalog | null> {
+    if (!this.rootPath) return null;
+    const result = await this.api.rescanCatalog(this.rootPath);
+    return this.applyScanResult(result);
+  }
+
+  private async applyScanResult(result: DesktopCatalogResult): Promise<ScannedCatalog | null> {
+    if (!result || result.canceled) return null;
+    if (result.error) throw new Error(result.error);
+    this.rootPath = result.rootPath ?? null;
+    // main уже разрешает свой корень, но после восстановления проекта из автосейва
+    // корень нужно объявить повторно
+    if (this.rootPath) void this.api.noteCatalogRoot(this.rootPath);
+    return desktopResultToCatalog(result);
+  }
+
+  /** sourceKey в desktop-режиме — это и есть абсолютный путь */
+  private resolvePath(sourceKey: string, handles: Map<string, AssetSource>): string | null {
+    if (isDesktopPathLike(sourceKey)) return sourceKey;
+    const ref = handles.get(sourceKey);
+    if (isDesktopFileRef(ref)) return ref.path;
     return null;
   }
 
-  async readFileAsFile(): Promise<File | null> {
-    return null;
+  async getObjectUrl(sourceKey: string, handles: Map<string, AssetSource>): Promise<string | null> {
+    const abs = this.resolvePath(sourceKey, handles);
+    return abs ? desktopAssetUrl(abs) : null;
+  }
+
+  async readFileAsFile(sourceKey: string, handles: Map<string, AssetSource>): Promise<File | null> {
+    const abs = this.resolvePath(sourceKey, handles);
+    if (!abs) return null;
+    try {
+      const data = await this.api.readFile(abs);
+      if (!data || !data.ok) return null;
+      // Buffer приходит из main как Uint8Array — lib.dom требует ArrayBufferView<ArrayBuffer>
+      return new File([data.buffer as unknown as BlobPart], data.name, { type: data.mime });
+    } catch {
+      return null;
+    }
   }
 }
 
+/**
+ * Плоский список от main-процесса → дерево папок/ассетов.
+ * Структура повторяет браузерный scanDirectoryHandle: относительный путь начинается
+ * с имени выбранной папки, пустой корень «продвигается» до подпапок.
+ */
+export function desktopResultToCatalog(result: DesktopCatalogResult): ScannedCatalog {
+  const rootName = result.rootName || 'Каталог';
+  const entries = result.entries ?? [];
+  const foldersByPath = new Map<string, FolderMeta>();
+
+  const ensureFolder = (relPath: string): FolderMeta => {
+    const existing = foldersByPath.get(relPath);
+    if (existing) return existing;
+    const slash = relPath.lastIndexOf('/');
+    const folder: FolderMeta = {
+      id: createId('folder'),
+      name: slash >= 0 ? relPath.slice(slash + 1) : relPath,
+      relativePath: relPath,
+      assetIds: [],
+      parentId: null,
+    };
+    foldersByPath.set(relPath, folder);
+    if (slash > 0) {
+      const parent = ensureFolder(relPath.slice(0, slash));
+      folder.parentId = parent.id;
+    }
+    return folder;
+  };
+
+  const root = ensureFolder(rootName);
+  for (const rel of result.folders ?? []) {
+    if (rel && rel !== rootName) ensureFolder(rel);
+  }
+
+  const assets: AssetMeta[] = [];
+  const handles = new Map<string, AssetSource>();
+
+  for (const entry of entries) {
+    const slash = entry.relPath.lastIndexOf('/');
+    const parentRel = slash > 0 ? entry.relPath.slice(0, slash) : rootName;
+    const folder = ensureFolder(parentRel);
+    const ext = extOf(entry.name);
+    const asset: AssetMeta = {
+      id: createId('asset'),
+      filename: entry.name,
+      relativePath: entry.relPath,
+      folderId: folder.id,
+      format: formatOf(ext),
+      fileSize: entry.size,
+      // В desktop-режиме sourceKey — абсолютный путь: проект переживает перезапуск
+      sourceKey: entry.absPath,
+      missing: false,
+      unsupported: !entry.previewable,
+    };
+    assets.push(asset);
+    folder.assetIds.push(asset.id);
+    handles.set(entry.absPath, { kind: 'desktop', path: entry.absPath, size: entry.size });
+  }
+
+  let resultFolders = Array.from(foldersByPath.values());
+  const subfolders = resultFolders.filter((f) => f.parentId === root.id);
+  if (subfolders.length > 0 && root.assetIds.length === 0) {
+    resultFolders = resultFolders
+      .filter((f) => f.id !== root.id)
+      .map((f) => (f.parentId === root.id ? { ...f, parentId: null } : f));
+  }
+
+  return {
+    rootName,
+    rootPath: result.rootPath ?? null,
+    folders: resultFolders,
+    assets,
+    handles,
+    truncated: !!result.truncated,
+    skippedDirs: result.skippedDirs ?? [],
+  };
+}
+
+/** Возвращает адаптер под текущее окружение: Electron — нативный, браузер — файловый API */
 export function createFileSystemAdapter(): FileSystemAdapter {
+  const desktop = getDesktop();
+  if (desktop) return new DesktopFileSystemAdapter(desktop);
   return new BrowserFileSystemAdapter();
 }

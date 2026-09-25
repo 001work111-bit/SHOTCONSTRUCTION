@@ -1,0 +1,53 @@
+# Конфигурация сборки десктоп-приложения (electron-builder).
+# Запуск: npm run electron:dist  (или :installer / :portable / :dir)
+
+appId: com.shotconstruction.app
+productName: SHOT Constructor
+copyright: © SHOT Construction
+
+directories:
+  output: release
+  buildResources: build
+
+# В архив попадает только собранная сборка + оболочка
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+  - "!**/*.map"
+
+asar: true
+# Нативных зависимостей нет — пересобирать node_modules не нужно
+npmRebuild: false
+detectUpdateChannel: false
+publish: null
+# Оставляем только нужные локали Chromium — минус ~10 МБ
+electronLanguages:
+  - ru
+  - en-US
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+  artifactName: SHOTConstructor-${version}-win-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SHOT Constructor
+  uninstallDisplayName: SHOT Constructor
+  deleteAppDataOnUninstall: false
+  artifactName: SHOTConstructor-${version}-Setup.${ext}
+
+portable:
+  artifactName: SHOTConstructor-${version}-Portable.${ext}

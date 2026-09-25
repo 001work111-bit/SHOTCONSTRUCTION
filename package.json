@@ -1,12 +1,26 @@
 {
-  "name": "react-vite-tailwind",
+  "name": "shot-construction",
+  "productName": "SHOT Constructor",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "SHOT Constructor — визуальный конструктор картинок и предпросмотра (React + Vite + Electron)",
+  "author": "SHOT Construction",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run electron:selftest && npm run build",
+    "electron:dev": "node scripts/electron-dev.mjs",
+    "electron:preview": "npm run build && electron .",
+    "electron:selftest": "node scripts/desktop-selftest.mjs && node scripts/desktop-selftest-catalog.mjs",
+    "electron:icon": "node scripts/generate-icon.mjs",
+    "electron:dist": "npm run build && electron-builder --win",
+    "electron:dist:installer": "npm run build && electron-builder --win nsis",
+    "electron:dist:portable": "npm run build && electron-builder --win portable",
+    "electron:dist:dir": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "clsx": "2.1.1",
@@ -20,6 +34,8 @@
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",
     "vite": "7.3.2",
