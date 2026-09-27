@@ -1,16 +1,39 @@
+/** Core domain types — platform-agnostic */
+
+export type ID = string;
+
+export type ImageFit = 'cover' | 'contain' | 'fill';
+
+export type AspectRatioPreset =
+  | '2:1'
+  | '16:9'
+  | '16:10'
+  | '4:3'
+  | '3:2'
+  | '1:1'
+  | 'custom';
+
 /**
- * Shot Composer — domain data model.
- *
- * Pure types only: no React, no DOM, no adapter imports.
- * The whole app (including the Electron build) shares these types.
+ * Переходы превью.
+ * 'crossfade' — cross dissolve (два слоя пересекаются по opacity),
+ * 'zoom' — лёгкий зум входящего кадра (как в reference-проекте).
  */
+export type TransitionType =
+  | 'fade'
+  | 'slide-vertical'
+  | 'slide-horizontal'
+  | 'crossfade'
+  | 'zoom';
 
-export type AssetId = string;
-export type FolderId = string;
-export type BlockId = string;
-export type StackId = string;
+export type NavigationMode = 'auto' | 'manual' | 'both';
 
-export type AssetFormat =
+/** fill = hero на весь viewport (как на сайте), frame = точный кадр блока */
+export type PreviewFit = 'fill' | 'frame';
+
+/** random = случайный выбор, sequential = по порядку, без повторов */
+export type RandomMode = 'random' | 'sequential';
+
+export type ImageFormat =
   | 'jpg'
   | 'jpeg'
   | 'png'
@@ -24,312 +47,353 @@ export type AssetFormat =
   | 'heif'
   | 'unknown';
 
-/** A physical picture on disk. Bytes are never copied into the project JSON. */
-export interface Asset {
-  id: AssetId;
-  /** file name, e.g. `001.jpg` */
-  name: string;
-  /** folder the file was discovered in; `null` for manually dropped files */
-  folderId: FolderId | null;
-  /** display path: relative to the scanned root (browser) or absolute (Electron) */
-  path: string;
-  format: AssetFormat;
-  mime: string;
-  bytes: number;
-  /** intrinsic dimensions — resolved lazily, may be undefined until first decode */
-  width?: number;
-  height?: number;
-  /**
-   * `folder` = discovered during a directory scan,
-   * `manual` = dragged in from outside the catalog (spec §38–39).
-   * A manual asset is what the model calls an "external image" on a block.
-   */
-  source: 'folder' | 'manual';
-  /** key of the persisted file handle / ref inside the active adapter store */
-  refKey: string;
-  addedAt: number;
-}
-
-export interface Folder {
-  id: FolderId;
-  name: string;
-  /** display path relative to the scan root */
-  path: string;
-  parentId: FolderId | null;
-  depth: number;
-  assetIds: AssetId[];
-  imageCount: number;
-  unsupportedCount: number;
-}
-
-/* ------------------------------------------------------------------ text -- */
-
-/** The single imported JSON template. Initial value for every block. */
-export interface TextTemplate {
+export interface TextContent {
   title: string;
   subtitle: string;
-  /** the small bordered lines: `Автокомпонентов`, `Запчастей и оборудования`, … */
   items: string[];
-  /** the big low-contrast words at the bottom: `Электроника`, `Промышленность`, … */
-  keywords: string[];
+  /** Extra large category lines (as in reference) */
+  categories?: string[];
 }
 
-export type TextLayerKey = 'title' | 'subtitle' | 'items' | 'keywords';
-
-/**
- * Partial per-block copy of the template. A layer that is absent inherits the
- * global template (Global Template → local override, spec §19).
- */
-export type TextOverride = Partial<TextTemplate>;
-
-export interface LayerTypography {
-  visible: boolean;
-  /** px inside the logical block frame (scaled in preview) */
-  fontSize: number;
-  weight: number;
+export interface TextStyle {
+  titleSize: number;
+  subtitleSize: number;
+  itemSize: number;
+  categorySize: number;
   color: string;
   opacity: number;
   align: 'left' | 'center' | 'right';
   lineHeight: number;
-  /** em */
   letterSpacing: number;
-  textTransform: 'none' | 'uppercase';
-  /** vertical gap above the layer, px at logical frame size */
-  marginTop: number;
+  titleWeight: number;
+  subtitleWeight: number;
 }
 
-export interface LayerItemsStyle {
-  /** bordered pill per item line (as on the reference screenshot) */
-  pill: boolean;
-  pillPadX: number;
-  pillPadY: number;
-  pillBorder: number;
-  pillRadius: number;
-  gap: number;
-}
-
-export interface LayerKeywordsStyle {
-  opacityStart: number;
-  /** added per line; negative → lines fade out downwards */
-  opacityStep: number;
-}
-
-export interface TextGroup {
-  /** anchor in % of the block frame */
-  anchorX: number;
-  anchorY: number;
-  /** text column width, % of the block frame */
-  width: number;
-}
-
-export interface TypographySet {
-  layers: Record<TextLayerKey, LayerTypography>;
-  items: LayerItemsStyle;
-  keywords: LayerKeywordsStyle;
-  group: TextGroup;
-}
-
-/* ----------------------------------------------------------------- block -- */
-
-export type AspectPreset = '2:1' | '16:9' | '16:10' | '4:3' | '3:2' | '1:1' | 'custom';
-export type ImageFit = 'cover' | 'contain' | 'fill';
-
-export interface Overlay {
+export interface OverlaySettings {
   enabled: boolean;
   color: string;
-  /** 0..1 */
-  opacity: number;
+  opacity: number; // 0–100
+  /** true = uses block override; false = inherits global */
+  override?: boolean;
 }
 
 export interface ImagePosition {
-  /** object-position X/Y, 0..100 */
-  x: number;
+  x: number; // 0–100 %
   y: number;
 }
 
-export interface Block {
-  id: BlockId;
-  /** logical frame size for editing (spec §14) — the physical file is never touched */
+export interface BlockDimensions {
   width: number;
   height: number;
-  aspect: AspectPreset;
-  /** current picture. `null` → empty block (renders a placeholder). */
-  imageAssetId: AssetId | null;
-  /** allowed image sources; empty array = inherit "all folders" */
-  selectedFolderIds: FolderId[];
-  /** excluded from bulk randomize (spec §32, §90–91) */
-  locked: boolean;
-  /** randomize only within accumulated favorites, when they exist (spec §36–37) */
-  useFavorites: boolean;
-  /** local text override; `null` = fully inherited from the global template */
-  textOverride: TextOverride | null;
-  typographyOverride: Partial<TypographySet> | null;
-  /** `null` = inherit the global overlay */
-  overlayOverride: Overlay | null;
-  imageFit: ImageFit;
-  imagePosition: ImagePosition;
-  createdAt: number;
+  aspectRatio: AspectRatioPreset;
+  lockAspect: boolean;
 }
 
-/* --------------------------------------------------------------- project -- */
+export interface AssetMeta {
+  id: ID;
+  filename: string;
+  /** Relative path within loaded root, or external marker */
+  relativePath: string;
+  folderId: ID | null;
+  format: ImageFormat;
+  width?: number;
+  height?: number;
+  fileSize?: number;
+  /** Browser: object URL or blob ref key; Electron: absolute path */
+  sourceKey: string;
+  missing?: boolean;
+  external?: boolean;
+  unsupported?: boolean;
+}
 
-export type PreviewTransition =
-  | 'fade'
-  | 'slide-vertical'
-  | 'slide-horizontal'
-  | 'crossfade'
-  | 'zoom';
+export interface FolderMeta {
+  id: ID;
+  name: string;
+  relativePath: string;
+  assetIds: ID[];
+  parentId: ID | null;
+}
 
-export type PreviewEasing = 'linear' | 'ease' | 'ease-in-out' | 'ease-out' | 'cubic-bezier(.16,1,.3,1)';
-export type PreviewNavigation = 'auto' | 'manual' | 'auto-manual';
+export interface Block {
+  id: ID;
+  order: number;
+  name: string;
+  imageAssetId: ID | null;
+  selectedFolderIds: ID[];
+  locked: boolean;
+  useFavorites: boolean;
+  favoriteAssetIds: ID[];
+  /** Local text; null means "use global template" — but we copy on create */
+  text: TextContent;
+  textIsOverride: boolean;
+  overlay: OverlaySettings;
+  imageFit: ImageFit;
+  imagePosition: ImagePosition;
+  dimensions: BlockDimensions;
+}
+
+export interface Stack {
+  id: ID;
+  name: string;
+  createdAt: number;
+  /** blockId → assetId */
+  images: Record<ID, ID | null>;
+}
 
 export interface PreviewSettings {
-  transition: PreviewTransition;
-  /** ms */
-  duration: number;
-  /** ms between autoplay steps */
-  delay: number;
-  easing: PreviewEasing;
+  transitionType: TransitionType;
+  transitionDuration: number; // ms
+  transitionDelay: number; // ms
+  easing: string;
   autoplay: boolean;
   loop: boolean;
-  navigation: PreviewNavigation;
-  /** `fill` = hero fills the viewport (like the reference site), `frame` = exact 2:1 letterbox */
-  fit: 'fill' | 'frame';
+  navigationMode: NavigationMode;
+  /** как кадр располагается в окне превью */
+  fit: PreviewFit;
+  /** полоса прогресса автоплея */
   showProgress: boolean;
+  /** кубик «рандом» поверх превью */
   showDice: boolean;
+  /** цвет фона страницы превью */
   background: string;
 }
 
-export interface ProjectSettings {
-  /** default overlay for every block (spec §21) */
-  globalOverlay: Overlay;
-  typography: TypographySet;
-  blockDefaults: {
-    width: number;
-    height: number;
-    aspect: AspectPreset;
-    imageFit: ImageFit;
-  };
-  /** new blocks start with "use favorites" enabled */
-  useFavoritesDefault: boolean;
-  historyLimit: number;
-  thumbnailBudgetMB: number;
-  /** seed of the last randomize operation (spec §73) */
-  lastSeed: string | null;
+export interface GlobalSettings {
+  overlay: OverlaySettings;
+  textStyle: TextStyle;
+  defaultDimensions: BlockDimensions;
+  blockCount: number;
+  useFavoritesGlobal: boolean;
+  /** random = кубик, sequential = по порядку без повторов */
+  randomMode: RandomMode;
 }
 
 export interface ProjectMeta {
-  id: string;
+  id: ID;
   name: string;
   createdAt: number;
   updatedAt: number;
-}
-
-export interface BlocksCollection {
-  order: BlockId[];
-  byId: Record<BlockId, Block>;
-}
-
-export interface StackEntry {
-  assetId: AssetId | null;
-  imageFit: ImageFit;
-  imagePosition: ImagePosition;
-}
-
-/** Saved combination of images of all blocks (spec §41). References only. */
-export interface Stack {
-  id: StackId;
-  index: number;
-  name: string;
-  createdAt: number;
-  entries: Record<BlockId, StackEntry>;
-}
-
-export interface Project {
   version: number;
-  meta: ProjectMeta;
-  settings: ProjectSettings;
-  folders: Folder[];
-  assets: Asset[];
-  template: TextTemplate;
-  blocks: BlocksCollection;
-  /** blockId → assetIds. Per-block favorites (spec §34). */
-  favorites: Record<BlockId, AssetId[]>;
-  stacks: Stack[];
-  preview: PreviewSettings;
-  /** refs that could not be resolved on the last load (spec §66) */
-  missingAssets: AssetId[];
-  /** folder ids whose handle could not be restored → Relink needed */
-  unlinkedFolderIds: FolderId[];
-}
-
-/* ------------------------------------------------------------- ui state -- */
-
-export type SidebarSection =
-  | 'project'
-  | 'blocks'
-  | 'images'
-  | 'text'
-  | 'overlay'
-  | 'random'
-  | 'favorites'
-  | 'stacks'
-  | 'preview'
-  | 'settings';
-
-export type AppMode = 'edit' | 'preview';
-export type SaveStatus = 'clean' | 'dirty' | 'saving' | 'saved' | 'error';
-
-export interface Toast {
-  id: string;
-  kind: 'info' | 'success' | 'warn' | 'error';
-  message: string;
-  detail?: string;
-  at: number;
-}
-
-export interface UiState {
-  mode: AppMode;
-  sidebarCollapsed: boolean;
-  inspectorOpen: boolean;
-  section: SidebarSection;
-  selectedBlockId: BlockId | null;
-  /** inline text editing: block + layer (+ optional line index) */
-  editing: { blockId: BlockId; layer: TextLayerKey; line: number } | null;
-  previewIndex: number;
-  previewDirection: 1 | -1;
-  previewPlaying: boolean;
-  saveStatus: SaveStatus;
-  toasts: Toast[];
-  busy: string | null;
-  /** last scan progress hint, shown in the status bar */
-  scanProgress: string | null;
-  search: string;
-  /** thumbnails currently decoded (status bar telemetry) */
-  decodeQueue: number;
 }
 
 export interface ProjectState {
-  project: Project;
-  ui: UiState;
+  meta: ProjectMeta;
+  settings: GlobalSettings;
+  template: TextContent;
+  folders: Record<ID, FolderMeta>;
+  assets: Record<ID, AssetMeta>;
+  blocks: Record<ID, Block>;
+  blockOrder: ID[];
+  stacks: Stack[];
+  activeStackId: ID | null;
+  preview: PreviewSettings;
+  /** UI selection (not always persisted) */
+  selectedBlockId: ID | null;
+  mode: 'edit' | 'preview';
+  dirty: boolean;
+  rootFolderName: string | null;
 }
 
-/* -------------------------------------------------------------- results -- */
+export const PROJECT_VERSION = 1;
 
-export type RandomizeFailureReason =
-  | 'no-folders-selected'
-  | 'no-catalog'
-  | 'no-eligible-images'
-  | 'empty-pool';
+export const DEFAULT_TEXT_TEMPLATE: TextContent = {
+  title: 'Авто',
+  subtitle: 'ОРГАНИЗУЕМ ПЕРЕВОЗКИ',
+  items: [
+    'АВТОКОМПОНЕНТОВ',
+    'ЗАПЧАСТЕЙ И ОБОРУДОВАНИЯ',
+    'ПРОИЗВОДСТВЕННЫХ КОМПЛЕКТУЮЩИХ',
+  ],
+  categories: [
+    'Электроника',
+    'Промышленность',
+    'Стройматериалы',
+    'Медицина',
+    'Химия',
+  ],
+};
 
-export interface RandomizeResult {
-  ok: boolean;
-  /** blockIds actually changed */
-  changed: BlockId[];
-  /** blockIds skipped by lock during a bulk operation */
-  skipped: BlockId[];
-  reason?: RandomizeFailureReason;
-  /** pool size per block, useful for diagnostics + status bar */
-  pools: Record<BlockId, number>;
-  seed: string;
+export const DEFAULT_TEXT_STYLE: TextStyle = {
+  titleSize: 64,
+  subtitleSize: 14,
+  itemSize: 13,
+  categorySize: 48,
+  color: '#ffffff',
+  opacity: 100,
+  align: 'center',
+  lineHeight: 1.2,
+  letterSpacing: 0.5,
+  titleWeight: 400,
+  subtitleWeight: 400,
+};
+
+export const DEFAULT_OVERLAY: OverlaySettings = {
+  enabled: true,
+  color: '#000000',
+  opacity: 45,
+  override: false,
+};
+
+export const DEFAULT_DIMENSIONS: BlockDimensions = {
+  width: 1024,
+  height: 512,
+  aspectRatio: '2:1',
+  lockAspect: true,
+};
+
+export const DEFAULT_PREVIEW: PreviewSettings = {
+  transitionType: 'crossfade',
+  transitionDuration: 750,
+  transitionDelay: 3200,
+  easing: 'cubic-bezier(.16,1,.3,1)',
+  autoplay: true,
+  loop: true,
+  navigationMode: 'both',
+  fit: 'fill',
+  showProgress: true,
+  showDice: true,
+  background: '#07080a',
+};
+
+export const TRANSITION_LABELS: Record<TransitionType, string> = {
+  fade: 'Fade',
+  'slide-vertical': 'Slide ↓',
+  'slide-horizontal': 'Slide →',
+  crossfade: 'Cross',
+  zoom: 'Zoom',
+};
+
+export const EASING_OPTIONS = [
+  { value: 'ease', label: 'ease' },
+  { value: 'in-out', label: 'in-out' },
+  { value: 'out', label: 'out' },
+  { value: 'linear', label: 'linear' },
+  { value: 'soft', label: 'soft' },
+] as const;
+
+/** CSS-значение для каждого «человеческого» названия easing */
+export const EASING_CSS: Record<string, string> = {
+  ease: 'ease',
+  'in-out': 'cubic-bezier(.65,0,.35,1)',
+  out: 'cubic-bezier(.16,1,.3,1)',
+  linear: 'linear',
+  soft: 'cubic-bezier(.4,0,.2,1)',
+};
+
+export const SUPPORTED_IMAGE_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'gif',
+  'svg',
+  'avif',
+  'bmp',
+  'tiff',
+  'tif',
+  'heic',
+  'heif',
+]);
+
+export function createId(prefix = 'id'): ID {
+  return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+}
+
+export function aspectToSize(
+  preset: AspectRatioPreset,
+  baseWidth = 1024
+): { width: number; height: number } {
+  const map: Record<string, [number, number]> = {
+    '2:1': [2, 1],
+    '16:9': [16, 9],
+    '16:10': [16, 10],
+    '4:3': [4, 3],
+    '3:2': [3, 2],
+    '1:1': [1, 1],
+  };
+  if (preset === 'custom') return { width: baseWidth, height: Math.round(baseWidth / 2) };
+  const [w, h] = map[preset] ?? [2, 1];
+  return { width: baseWidth, height: Math.round((baseWidth * h) / w) };
+}
+
+export function createDefaultBlock(order: number, template: TextContent, folderIds: ID[] = []): Block {
+  const dims = { ...DEFAULT_DIMENSIONS };
+  return {
+    id: createId('block'),
+    order,
+    name: `Block ${String(order + 1).padStart(2, '0')}`,
+    imageAssetId: null,
+    selectedFolderIds: [...folderIds],
+    locked: false,
+    useFavorites: false,
+    favoriteAssetIds: [],
+    text: {
+      title: template.title,
+      subtitle: template.subtitle,
+      items: [...template.items],
+      categories: template.categories ? [...template.categories] : [],
+    },
+    textIsOverride: false,
+    overlay: { ...DEFAULT_OVERLAY },
+    imageFit: 'cover',
+    imagePosition: { x: 50, y: 50 },
+    dimensions: dims,
+  };
+}
+
+export function createEmptyProject(name = 'Untitled Project'): ProjectState {
+  const template = { ...DEFAULT_TEXT_TEMPLATE, items: [...DEFAULT_TEXT_TEMPLATE.items], categories: [...(DEFAULT_TEXT_TEMPLATE.categories ?? [])] };
+  const blocks: Record<ID, Block> = {};
+  const blockOrder: ID[] = [];
+  for (let i = 0; i < 6; i++) {
+    const b = createDefaultBlock(i, template);
+    blocks[b.id] = b;
+    blockOrder.push(b.id);
+  }
+  const now = Date.now();
+  return {
+    meta: {
+      id: createId('proj'),
+      name,
+      createdAt: now,
+      updatedAt: now,
+      version: PROJECT_VERSION,
+    },
+    settings: {
+      overlay: { ...DEFAULT_OVERLAY },
+      textStyle: { ...DEFAULT_TEXT_STYLE },
+      defaultDimensions: { ...DEFAULT_DIMENSIONS },
+      blockCount: 6,
+      useFavoritesGlobal: false,
+      randomMode: 'random',
+    },
+    template,
+    folders: {},
+    assets: {},
+    blocks,
+    blockOrder,
+    stacks: [],
+    activeStackId: null,
+    preview: { ...DEFAULT_PREVIEW },
+    selectedBlockId: blockOrder[0] ?? null,
+    mode: 'edit',
+    dirty: false,
+    rootFolderName: null,
+  };
+}
+
+/** Serializable project (no runtime handles) */
+export interface SerializedProject {
+  version: number;
+  meta: ProjectMeta;
+  settings: GlobalSettings;
+  template: TextContent;
+  folders: FolderMeta[];
+  assets: Array<Omit<AssetMeta, 'sourceKey'> & { sourceKey?: string }>;
+  blocks: Block[];
+  blockOrder: ID[];
+  stacks: Stack[];
+  activeStackId: ID | null;
+  preview: PreviewSettings;
+  rootFolderName: string | null;
 }

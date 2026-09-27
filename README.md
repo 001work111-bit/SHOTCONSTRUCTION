@@ -1,117 +1,221 @@
-# Shot Composer
+# Visual Constructor — Image Combinator (Electron-сборка)
 
-Локальный **визуальный конструктор и рандомизатор изображений** для сборки превью одностраничного сайта.
-Работает целиком в браузере: **без backend, без сервера, без загрузки файлов куда-либо**.
-Исходные изображения никогда не изменяются, не переименовываются и не копируются — проект хранит только ссылки.
+Десктоп-версия конструктора слайдов/баннеров: папка с картинками → блоки с текстом
+поверх → рандомизация → полноэкранное превью → сохранение проекта в JSON.
 
-```
-Проект → Блоки (секции сайта) → текущие изображения → Favorites (на блок) → Stacks (комбинации)
-```
-
----
-
-## Запуск
-
-```bash
-npm install
-
-npm run dev        # http://localhost:5173  (браузер, File System Access API)
-npm run build      # tsc + production build → ./dist
-npm test           # 35 тестов: домен, контроллер (сценарий целиком), UI smoke
-npm run typecheck
-```
-
-Опционально — проверка в реальном браузере (Playwright не входит в зависимости приложения):
-
-```bash
-npm i -D playwright && npx playwright install chromium
-node tools/qa-scenario.mjs        # 34 проверки сценария из ТЗ в живом приложении
-node tools/screens.mjs            # серия скриншотов всех панелей и preview
-node tools/bench-catalog.mjs      # замеры на каталоге ~20 000 файлов
-```
-
-Первый запуск без своих фотографий: кнопка **«Try demo catalog»** / **«Demo catalog»** —
-загружается небольшой каталог из `public/demo` (5 папок × 4 файла), проходящий через тот же
-реальный конвейер (декодирование, миниатюры, рандомайзер, favorites, stacks).
-
-### Electron (готово к переносу, не обязательно)
-
-```bash
-npm i -D electron            # + опционально: npm i sharp   (нативные TIFF / HEIC)
-npm run build
-npm run electron             # или: npm run electron:dev  (грузит Vite dev server)
-```
-
-Ядро, рандомайзер, stacks, preview и весь UI при этом **не меняются** — подменяется только
-`FileSystemAdapter` (`src/filesystem/browser.ts` → `src/filesystem/electron.ts`).
+Оригинальный веб-репозиторий: <https://github.com/001work111-bit/SHOTCONSTRUCTION>
+(там же причина, по которой сайт не открывался — GitHub Pages отдавал исходники
+вместо `dist/`; здесь это исправлено.)
 
 ---
 
-## Что реализовано
+> **Не программист?** Тогда начните с файла **`ИНСТРУКЦИЯ.md`** в этой папке —
+> там те же шаги, но расписаны полностью по-человечески.
+> Коротко: установить Node.js с nodejs.org (кнопка LTS), затем двойной клик по
+> **`ЗАПУСК.bat`** (Windows) / **`ЗАПУСК.command`** (macOS) / **`ЗАПУСК.sh`** (Linux).
 
-Полный отчёт о проверке (сценарии, замеры производительности, найденные и исправленные
-ошибки, известные ограничения) — в `VERIFICATION.md`.
+---
 
-| Требование ТЗ | Где |
+## 1. Быстрый старт
+
+```bash
+npm install          # установка зависимостей (~30 сек)
+npm run dev          # Vite dev-server + окно Electron с горячей перезагрузкой
+```
+
+Остальные команды:
+
+| Команда | Что делает |
 |---|---|
-| Загрузка корневой папки, рекурсивный скан, группировка по папкам (§23–24) | `filesystem/browser.ts`, `core/assets.ts::applyScan` |
-| Большие каталоги: metadata → thumbnail по видимости → full image (§26, §70) | `filesystem/thumbs.ts` (ImageService, LRU бюджет, очередь декодирования) |
-| Виртуализация списков (§69) | `ui/hooks.ts` (`useVirtualWindow`, `useVirtualGrid`) |
-| Блоки: количество, стабильные id, размер, aspect, ratio-lock (§6, §12–14, §76) | `core/blocks.ts` |
-| Fit (Cover/Contain/Fill), object position X/Y (§15) | `BlockCard`, инспектор → Image |
-| Текстовый JSON-шаблон, применяется ко всем блокам (§16) | `core/templates.ts`, панель **Text** |
-| Inline-редактирование текста прямо на блоке, локальный override (§17–19) | `ui/components/BlockText.tsx` |
-| Overlay: глобальный + индивидуальный, вкл/выкл на блок (§20–22) | `core/blocks.ts`, панели **Overlay** |
-| Выбор папок для блока, Select All / Clear All (§27) | инспектор → Sources |
-| Randomize All / Selected / кубик на блоке, единый алгоритм (§28–31, §72–74) | `core/randomizer.ts` (одна точка входа) |
-| Lock / Unlock / Lock All, массовые операции пропускают locked (§32–33, §90–91) | `core/randomizer.ts`, панель **Random** |
-| Favorites строго на конкретный блок + **визуальный счётчик у каждого блока** | `core/favorites.ts`, чип `★ N` в шапке блока |
-| Use favorites с fallback на папки, если favorites пусты (§36–37) | `randomizer.resolvePool` |
-| Drag & drop внешнего файла на блок (§38–39, §67) | `controller.handleBlockDrop` |
-| Stacks: сохранение, автнумерация, навигация, применение только картинок (§41–44, §78) | `core/stacks.ts` |
-| Undo/Redo, атомарность массовых операций (§45–47) | `core/history.ts` + `controller.run()` (одна операция = одна запись) |
-| Save / Load проекта в JSON, версия, валидация, relink (§48–49, §66, §79) | `persistence/*`, `core/validation.ts` |
-| Автосохранение в IndexedDB (§50) | `persistence/autosave.ts` |
-| Preview Mode: ESC, переходы (fade/slide/cross/zoom), autoplay, loop, мышь/клавиши, кубик (§51–60, §92) | `core/preview.ts`, `ui/preview/PreviewOverlay.tsx` |
-| Hotkeys Ctrl+Z / Ctrl+Y / Ctrl+S / Ctrl+O / Ctrl+B / Esc / стрелки / R (§82) | `controller.installHotkeys` |
-| Статусы Saved / Saving / Unsaved, счётчики, missing-файлы (§83, §62) | Header, StatusBar |
-| Поиск по файлам и папкам (§68) | панель **Images** |
-| Ошибки вместо `console.error` (§80–81, §107) | `core/errors.ts` + тосты |
+| `npm run dev` | разработка: Vite (порт 5173) + Electron |
+| `npm run dev:web` | только веб-версия в браузере (как раньше) |
+| `npm run build` | прод-сборка React → `dist/index.html` (один файл, всё инлайнится) |
+| `npm start` | запуск собранной версии в Electron |
+| `START.bat` / `START.command` / `START.sh` | «быстрый» запуск без лишних сообщений (когда всё уже установлено) |
+| `npm run typecheck` | проверка типов TypeScript |
+| `npm run smoke` | self-test ядра без окна (протокол, скан, чтение файлов) |
+| `npm run pack` | сборка без упаковки → `release/linux-unpacked` (или win/mac) |
+| `npm run dist` | установщик/образ: AppImage (Linux), NSIS+portable (Windows), dmg (macOS) |
+
+Требования: **Node.js 20+** (желательно 22+), ~300 МБ места.
 
 ---
 
-## Архитектура
+## 2. Что изменено против веб-версии
+
+### Electron-оболочка
 
 ```
-UI (React)  →  AppController  →  core/*  (чистый домен, без React и DOM)
-                     │
-                     └─→ FileSystemAdapter  (browser | electron)
+electron/
+  main.cjs        — главный процесс: окно, меню, IPC, кастомный протокол appimg://
+  preload.cjs     — мост window.electronAPI (contextBridge, sandbox: true)
+  fs-service.cjs  — нативные диалоги, рекурсивный скан папки, чтение/запись файлов
+src/filesystem/
+  ElectronFileSystemAdapter.ts  — реализация FileSystemAdapter поверх моста
+  FileSystemAdapter.ts          — фабрика: Electron → нативный адаптер, иначе браузерный
+  thumbs.ts                     — конвейер миниатюр: корзинные размеры, LRU-бюджет 48 МБ,
+                                  очередь на 4 декодирования, revoke при вытеснении
+  demoCatalog.ts                — встроенный демо-набор картинок
+src/core/randomizer/sequence.ts — «мешок» без повторов для последовательного режима
+src/core/preview/transitions.ts— CSS-переходы превью (--pv-duration/--pv-easing/…)
+scripts/make-demo-manifest.cjs  — список демо-картинок (чтобы сборщик не вшил их в бандл)
+src/electron.d.ts               — типы window.electronAPI
+src/store/ProjectStore.tsx      — нативные Save/Open, восстановление missing-флагов
+vite.config.ts                  — base: './' (обязательно для file://) + CSP в прод-сборке
+scripts/dev.mjs                 — параллельный запуск Vite и Electron
 ```
 
-* `src/core/` — модель, состояние, редьюсеры, история. Юнит-тестируется без браузера.
-* `src/filesystem/` — адаптеры файловой системы, IndexedDB, конвейер миниатюр, демо-каталог.
-* `src/persistence/` — сериализация, загрузка/валидация/relink, автосохранение.
-* `src/ui/` — только представление: читает селекторы, вызывает методы контроллера.
-* `electron/` — main + preload, готовые к запуску; реализуют тот же контракт адаптера.
+### Что это даёт
 
-Подробный разбор модели данных, дерева компонентов и найденных противоречий ТЗ — в `ARCHITECTURE.md`.
+1. **Настоящий выбор папки.** Вместо `<input webkitdirectory>` — системный диалог
+   (`dialog.showOpenDialog`) и рекурсивный обход в главном процессе. Работает
+   с любыми уровнями вложенности, битые ссылки и папки без доступа просто пропускаются.
+2. **Картинки грузятся напрямую с диска.** Абсолютный путь → `appimg://file/<base64url>`
+   → `protocol.handle` отдаёт байты с правильным `Content-Type`. Никаких blob:-URL
+   и утечек памяти, кэш на год.
+3. **Проекты переоткрываются без потерь.** `sourceKey` — абсолютный путь, поэтому
+   после «Open» приложение проверяет через `fs:checkFiles`, какие файлы ещё существуют,
+   и снимает/ставит флаг `missing` (в браузере сохранённый проект «терял» картинки).
+4. **Нативное сохранение.** «Save» → системный диалог «Сохранить как» + запись JSON
+   на диск (в браузере был только `download`).
+5. **Меню** (Файл / Правка / Вид / Окно) с командами в рендерер через `menu:command`.
+   Ctrl+Z / Ctrl+Y / Ctrl+S / Ctrl+O по-прежнему обрабатывает само приложение —
+   акселераторы в меню намеренно не назначены, чтобы не перехватывать события.
+6. **Безопасность.** `contextIsolation: true`, `nodeIntegration: false`,
+   `sandbox: true`, `webSecurity: true`, CSP в прод-сборке, внешние ссылки —
+   только через `shell.openExternal`, новые окна запрещены.
 
-### Четыре независимых сущности, которые не смешиваются
+### Исправления по пути
 
-| Сущность | Смысл | Хранение |
-|---|---|---|
-| **Asset** | физическая картинка на диске | метаданные + ссылка, байты не копируются |
-| **Block** | секция сайта с одной картинкой | `imageAssetId` |
-| **Favorite** | понравившаяся картинка **для конкретного блока** | `favorites[blockId] = assetId[]` |
-| **Stack** | сохранённая комбинация картинок всех блоков | `entries: { blockId → assetId }` |
-
-Текст: глобальный шаблон → копия/наследование в каждом блоке → локальный override.
-Рандомизация не трогает текст, overlay, папки, favorites, lock и stacks; stack восстанавливает только изображения.
+* `base: './'` в `vite.config.ts` — без этого собранный `index.html` не грузится
+  через `file://` в Electron.
+* `tif` больше не ломает типы (`ImageFormat` теперь канонический `tiff`) —
+  `npm run typecheck` проходит чисто.
+* Добавлен `data-block-card` на карточку блока (удобно для отладки и тестов).
 
 ---
 
-## Горячие клавиши
+## 3. Архитектура моста
 
-`Ctrl+Z` undo · `Ctrl+Y` / `Ctrl+Shift+Z` redo · `Ctrl+S` экспорт проекта · `Ctrl+O` импорт ·
-`Ctrl+B` добавить блок · `Esc` выйти из preview / завершить редактирование ·
-`↑ ↓ ← →` и колесо — навигация в preview · `R` — рандомизировать активный блок в preview.
+```
+React (рендерер)                preload.cjs                 main.cjs
+─────────────────              ─────────────               ──────────────────
+useProjectStore
+  └ loadFolder()  ───────────▶  pickDirectory()  ─────────▶ dialog + fsService.scanDirectory()
+  └ ensureAssetUrl ───────────▶  imageUrl(absPath) ───────▶ 'appimg://file/<base64url>'
+  └ saveProjectFile ─────────▶  saveProject(name, json) ─▶ showSaveDialog + writeFile
+  └ loadProjectFile ─────────▶  openJson() ──────────────▶ showOpenDialog + readFile
+  └ refreshAssetAvailability ▶  checkFiles(paths) ───────▶ stat() по пачкам
+```
+
+`<img src="appimg://file/…">` → `protocol.handle` → `fs.readFile` → `Response`
+с `Content-Type` по расширению файла.
+
+Приложение не знает, в какой оболочке работает: `createFileSystemAdapter()`
+возвращает нативный адаптер, если доступен `window.electronAPI`, иначе браузерный.
+Веб-версия (`npm run dev:web`) продолжает работать как раньше.
+
+---
+
+## 4. Как пользоваться
+
+1. **Load image folder** — выберите корневую папку. Картинки раскладываются по
+   подпапкам-категориям; изображения в корне идут в виртуальную папку с именем корня.
+2. **Blocks** — добавьте/удалите блоки, задайте размер (по умолчанию 1024×512, 2:1).
+3. **Images** — для выбранного блока отметьте папки-источники, fit (cover/contain/fill),
+   позицию X/Y. Снизу — сетка всех картинок с номерами: **клик** назначает картинку
+   в выделенный блок, **двойной клик** (или ★) отправляет в избранное.
+   Кнопка **«Экспорт ★»** копирует все избранные картинки в выбранную папку.
+   Кнопка **«Демо»** открывает встроенный набор картинок (`public/demo`).
+4. **Text** — заголовок, подзаголовок, список, крупные категории; стиль глобально
+   или переопределение на блок.
+5. **Overlay** — затемнение: цвет + прозрачность (глобально или per-block).
+6. **Random** / **Randomize All** — случайная картинка из разрешённых папок;
+   locked-блоки не трогаются. В блоке можно собрать «избранное» (★) и рандомить
+   только по нему.
+7. **Stacks** — сохраните комбинацию картинок как «стек», листайте ‹ › в шапке.
+8. **Preview** — полноэкранный режим: пять переходов (Fade, Slide ↓, Slide →,
+   Cross dissolve, Zoom), длительность, задержка, easing, «на весь экран» или точный
+   кадр блока, полоса прогресса автоплея, кубик и ★ прямо в превью.
+   Открывается с выделенного блока; ← → — блоки, Alt+← → — картинки блока,
+   Space — пауза, 1–5 — переход, F — избранное, R — следующая картинка, Esc — выход.
+9. **Save / Open** — проект уезжает в JSON; в Electron ещё и автосохранение
+   в `localStorage` + восстановление при старте.
+
+---
+
+## 5. Режимы смены картинок и избранное
+
+**Случайно** (по умолчанию) — клавиша **R** или кубик подбирают случайную картинку
+из разрешённых папок блока.
+
+**По порядку** (включается на вкладке Preview) — «мешок» без повторов: картинки
+блока перебираются по очереди, каждая встречается один раз, а когда список
+закончился — порядок начинается заново. Реализация — `src/core/randomizer/sequence.ts`
+(`SequenceQueue`: тасованный набор на блок, пересобирается при смене состава папок).
+
+**Избранное** — отмечается двойным кликом в панели Images, звёздочкой в превю
+или клавишей **F**. Кнопка **«Экспорт ★»** копирует все отмеченные картинки
+в выбранную папку через нативный `fs:copyFiles` (структура подпапок сохраняется,
+`../` в путях заблокирован). В браузере без Electron сохраняется список в JSON.
+
+---
+
+## 6. Сборка дистрибутива
+
+```bash
+npm run build        # сначала всегда (electron-builder берёт dist/)
+npm run dist         # AppImage / NSIS / dmg — в зависимости от ОС
+```
+
+* Linux → `release/Shot Construction-1.0.0.AppImage` (запуск: `./ Shot Construction-1.0.0.AppImage`,
+  нужен FUSE; без FUSE — `--appimage-extract` и запуск `AppRun`).
+* Windows → `release/Shot Construction-Setup-1.0.0.exe` + portable.
+* macOS → `release/Shot Construction-1.0.0.dmg` (сборка возможна только на macOS).
+
+Иконка: `build-resources/icon.png` (512×512).
+
+---
+
+## 7. Отладка
+
+```bash
+npm run smoke        # self-test без окна: скан, протокол, чтение, checkFiles
+SHOTC_DEVTOOLS=1 npm run dev   # dev с открытой консолью
+SHOTC_SMOKE=1 npm start        # self-test на уже собранной версии
+```
+
+Авто-проверка интерфейса (нужен дисплей; на машине без графики — `xvfb-run -a`):
+
+```bash
+SHOTC_E2E=1 npm start                      # открывает демо-набор, заходит в превью
+SHOTC_E2E=1 SHOTC_SCREENSHOT=/tmp/s.png npm start    # + скриншот окна
+```
+
+Что проверяет E2E: загрузку демо-каталога, миниатюры в панели Images, вход в превью
+с выделенного блока, переключение всех пяти переходов, cross dissolve (два слоя
+с разными `z-index` и `opacity`), полосу прогресса, Alt+→ (картинка в блоке),
+F (избранное) и выход по Esc.
+
+Что проверяет `smoke`:
+
+* рекурсивный скан временной папки (1 картинка → 1 ассет, пустой корень скрывается),
+  `sourceKey` — абсолютный путь;
+* `appimg://` отдаёт 200 + `image/png` + байты; несуществующий файл → 404;
+* `readFileData` и `checkFiles` возвращают корректный base64 и карту существования.
+
+Веб-версия отладки: `F12` / меню «Вид → Инструменты разработчика».
+
+---
+
+## 8. Если что-то не работает
+
+| Симптом | Решение |
+|---|---|
+| `Missing X server or $DISPLAY` | Electron без графики: запускайте на машине с дисплеем или через `xvfb-run` |
+| Белое окно вместо приложения | Забыли `npm run build` — прод-режим грузит `dist/index.html` |
+| `'vite' is not recognized` / кракозябры в окне запуска | Старый `ЗАПУСК.bat`: скачайте папку заново. Актуальный `.bat` — только ASCII, весь текст печатает `scripts/launch.cjs` |
+| Порт 5173 занят | `npm run dev:web` не нужен; dev-скрипт сам поднимает Vite на 5173 |
+| Картинки не отображаются | Папка переехала: откройте проект заново и нажмите **Load image folder** |
+| AppImage не запускается | Нет FUSE: `./app.AppImage --appimage-extract && ./squashfs-root/AppRun` |
+| Шрифты не загрузились | Индекс тянет Google Fonts; без интернета подставится системный шрифт |

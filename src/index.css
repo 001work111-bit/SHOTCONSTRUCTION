@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #0c0c0e;
+  color: #fff;
+  font-family:
+    "Inter",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Prevent image drag ghosts */
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* Content editable caret */
+[contenteditable]:focus {
+  outline: none;
+}
+
+/* Range input polish */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 16px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #34d399;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: #34d399;
+  cursor: pointer;
+}
+
+/* Color input */
+input[type="color"] {
+  padding: 0;
+  border: none;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* Number input spinners less intrusive */
+input[type="number"]::-webkit-inner-spin-button {
+  opacity: 0.4;
+}
+
+/* ================================================================== */
+/* Превью: переходы между слайдами                                     */
+/* Анимируем ТОЛЬКО opacity и transform — это дёшево для GPU           */
+/* ================================================================== */
+
+.pv-layer {
+  position: absolute;
+  inset: 0;
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+}
+
+.pv-enter,
+.pv-leave {
+  transition-property: opacity, transform;
+  transition-duration: var(--pv-duration, 750ms);
+  transition-timing-function: var(--pv-easing, ease);
+}
+
+/* --- Fade: простое растворение ------------------------------------- */
+.pv-fade.pv-enter { opacity: 0; }
+.pv-fade.pv-enter.pv-on { opacity: 1; }
+.pv-fade.pv-leave { opacity: 1; }
+.pv-fade.pv-leave.pv-on { opacity: 0; }
+
+/* --- Cross dissolve: кадры пересекаются по прозрачности ------------ */
+/* Оба слоя видны одновременно, поэтому «растворение» читается мягче,  */
+/* чем у обычного fade (нет полного then-пустого кадра).               */
+.pv-crossfade.pv-enter { opacity: 0; z-index: 2; }
+.pv-crossfade.pv-enter.pv-on { opacity: 1; }
+.pv-crossfade.pv-leave { opacity: 1; z-index: 1; }
+.pv-crossfade.pv-leave.pv-on { opacity: 0; }
+
+/* --- Zoom: входящий кадр слегка приближается ----------------------- */
+.pv-zoom.pv-enter { opacity: 0; transform: scale(1.06); z-index: 2; }
+.pv-zoom.pv-enter.pv-on { opacity: 1; transform: scale(1); }
+.pv-zoom.pv-leave { opacity: 1; transform: scale(1); z-index: 1; }
+.pv-zoom.pv-leave.pv-on { opacity: 0; transform: scale(0.98); }
+
+/* --- Slide ↓ / Slide → --------------------------------------------- */
+.pv-slide-vertical.pv-enter,
+.pv-slide-horizontal.pv-enter { z-index: 2; }
+
+.pv-slide-vertical.pv-enter.pv-on,
+.pv-slide-horizontal.pv-enter.pv-on { opacity: 1; transform: none; }
+
+.pv-slide-vertical.pv-dir-next.pv-enter { opacity: 1; transform: translateY(100%); }
+.pv-slide-vertical.pv-dir-prev.pv-enter { opacity: 1; transform: translateY(-100%); }
+.pv-slide-vertical.pv-dir-next.pv-leave.pv-on { opacity: 1; transform: translateY(-100%); }
+.pv-slide-vertical.pv-dir-prev.pv-leave.pv-on { opacity: 1; transform: translateY(100%); }
+
+.pv-slide-horizontal.pv-dir-next.pv-enter { opacity: 1; transform: translateX(100%); }
+.pv-slide-horizontal.pv-dir-prev.pv-enter { opacity: 1; transform: translateX(-100%); }
+.pv-slide-horizontal.pv-dir-next.pv-leave.pv-on { opacity: 1; transform: translateX(-100%); }
+.pv-slide-horizontal.pv-dir-prev.pv-leave.pv-on { opacity: 1; transform: translateX(100%); }
+
+.pv-slide-vertical.pv-leave,
+.pv-slide-horizontal.pv-leave { opacity: 1; z-index: 1; }
+
+/* Полоса прогресса автоплея */
+@keyframes pv-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.pv-progress-track {
+  transform-origin: left center;
+  animation: pv-progress linear forwards;
+}
+
+/* Медиа-сетка: тонкие скроллбары, чтобы не мешали плиткам */
+.pv-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.pv-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+}
+.pv-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
