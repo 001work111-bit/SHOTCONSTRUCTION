@@ -1,0 +1,13 @@
+const {chromium}=require('playwright'),assert=require('assert'),path=require('path');
+(async()=>{const browser=await chromium.launch({args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1400,height:900}});const errs=[];page.on('pageerror',e=>errs.push(e.message));
+ await page.goto('file://'+path.resolve('Sandbox_Styles_v5_WORKING.html'));
+ await page.setInputFiles('#jsFileInput',path.resolve('uploads/portfolio_template_library_all_96.js'));await page.waitForFunction(()=>Object.keys(LIB).length===97);
+ await page.click('#btnStylesV5');await page.evaluate(()=>{styleFilter='editorial-blue';renderLib();renderTopFilterDDs();renderInspector(getActiveTpl());});
+ await page.click('[data-collect]');await page.click('.v5-ai [data-create]');await page.click('[data-auto]');
+ const old=await page.evaluate(()=>({id:CoversStyleV5.styleId,count:Object.values(LIB).filter(t=>t.visualStyle===CoversStyleV5.styleId).length}));assert(old.count>0);
+ await page.goto('file://'+path.resolve('Sandbox_Styles_v8_WORKING.html'));
+ const migrated=await page.evaluate(id=>({count:Object.keys(LIB).length,program:Object.keys(STYLES),editor:!!EDITOR_STYLES[id],retained:Object.values(LIB).filter(t=>t.editorStyleId===id),strays:Object.values(LIB).filter(t=>t.visualStyle===id).length}),old.id);
+ assert.equal(migrated.count,97);assert(migrated.editor);assert.equal(migrated.strays,0);assert.equal(migrated.retained.length,old.count);
+ assert(migrated.retained.every(t=>migrated.program.includes(t.visualStyle)));assert.deepEqual(errs,[]);
+ console.log('v5→v8 migration passed:',migrated.retained.length,'templates, program styles:',migrated.program);await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

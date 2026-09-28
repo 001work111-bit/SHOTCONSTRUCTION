@@ -1,0 +1,95 @@
+const {chromium}=require('playwright'),assert=require('assert'),path=require('path');
+(async()=>{
+ const browser=await chromium.launch({args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1550,height:950}});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept('Program Copy'));
+ await page.goto('file://'+path.resolve('Sandbox_Styles_v8_WORKING.html'));
+ await page.setInputFiles('#jsFileInput',path.resolve('uploads/portfolio_template_library_all_96.js'));
+ await page.waitForFunction(()=>Object.keys(LIB).length===97);
+ await page.click('#btnStylesV5');
+ await page.evaluate(()=>{styleFilter='editorial-blue';renderLib();renderTopFilterDDs();renderInspector(getActiveTpl());});
+ await page.click('[data-collect]');assert((await page.locator('.v5-ai').textContent()).includes('42'));
+ await page.fill('.v5-ai [data-name]','Editorial · direct');await page.click('.v5-ai [data-create]');
+ const id=await page.evaluate(()=>CoversStyleV5.styleId);
+ assert.equal(await page.evaluate(()=>Object.keys(STYLES).length),2,'editor creation must not add a program style');
+ assert.equal(await page.evaluate(id=>EDITOR_STYLES[id].v4.collectionStats.accepted,id),131);
+ assert.equal(await page.locator('select[data-category-filter]').inputValue(),'__all');
+ assert((await page.locator('.v5-editor .role').count())>5);
+ assert((await page.locator('[data-pick-merged="meta"]').count())>1);
+ await page.click('[data-auto]');
+ assert(await page.evaluate(id=>Object.values(LIB).some(t=>t.editorStyleId===id&&t.visualStyle==='editorial-blue'),id));
+ assert(!await page.evaluate(id=>Object.values(LIB).some(t=>t.visualStyle===id),id));
+ const chosen=await page.evaluate(id=>{const t=Object.values(LIB).find(t=>t.editorStyleId===id&&t.templateGroup==='Intro'&&Object.keys(t.v5Bindings?.[id]||{}).length);const b=t.blocks.find(b=>b.kind==='text'&&t.v5Bindings[id][b.id]);selectTpl(t.id);selectedBlockId=b.id;renderCanvasTemplate(t);renderInspector(t);return {tpl:t.id,block:b.id,program:t.visualStyle,binding:t.v5Bindings[id][b.id]};},id);
+ assert.equal(chosen.program,'editorial-blue');
+ assert((await page.locator('.v6-binding-row.v6-binding-selected').textContent()).includes(chosen.binding.roleId));
+ await page.selectOption('select[data-category-filter]',chosen.binding.categoryId);
+ const linked=page.locator(`[data-role-row="${chosen.binding.roleId}"][data-category="${chosen.binding.categoryId}"]`);
+ assert((await linked.getAttribute('class')).includes('v6-role-selected'));
+ assert((await linked.locator('.v6-selected').count())>=1);
+ // The custom selector shows a real color swatch alongside token and actual value.
+ await linked.locator('[data-open-role]').click();await linked.locator('[data-color-open]').click();
+ assert((await linked.locator('.v6-color-menu .v6-swatch').count())>0);
+ assert((await linked.locator('.v6-color-menu').textContent()).includes('#'));
+ // Disable a used global role color and explicitly map it onto another allowed token.
+ const policy=await page.evaluate(id=>{const v=EDITOR_STYLES[id].v4,r='body',allowed=v.typography[r].allowedColors;
+   const token=allowed.find(x=>Object.values(v.categories).some(c=>(c.roles?.[r]||[]).some(item=>item.colorToken===x))&&allowed.some(y=>y!==x));
+   return {role:r,token,other:allowed.find(x=>x!==token),before:Object.values(v.categories).flatMap(c=>c.roles?.[r]||[]).filter(x=>x.colorToken===token).length};},id);
+ assert(policy.token&&policy.other&&policy.before>0);
+ await page.locator(`[data-role-color="${policy.role}"][data-token="${policy.token}"]`).evaluate(el=>{el.checked=false;el.dispatchEvent(new Event('change',{bubbles:true}));});
+ assert(await page.locator('.v6-remap').isVisible());await page.selectOption('.v6-remap [data-replacement]',policy.other);await page.click('.v6-remap [data-commit]');
+ assert(await page.evaluate(({id,policy})=>{const v=EDITOR_STYLES[id].v4;return !v.typography[policy.role].allowedColors.includes(policy.token)&&Object.values(v.categories).every(c=>(c.roles?.[policy.role]||[]).every(x=>x.colorToken!==policy.token));},{id,policy}));
+ assert(await page.evaluate(id=>Object.values(LIB).every(t=>['cinematic','editorial-blue'].includes(t.visualStyle)),id));
+ // Alt+number really removes the variant from both All and its category (including bound copies).
+ const variant=await page.evaluate(id=>EDITOR_STYLES[id].v4.categories.Intro.roles.meta[0].id,id);
+ await page.selectOption('select[data-category-filter]','Intro');
+ await page.locator('[data-role-row="meta"][data-category="Intro"] [data-pick]').first().click({modifiers:['Alt']});
+ assert(!await page.evaluate(({id,variant})=>EDITOR_STYLES[id].v4.categories.Intro.roles.meta.some(x=>x.id===variant),{id,variant}));
+ assert(!await page.evaluate(({id,variant})=>Object.values(LIB).some(t=>Object.values(t.v5Bindings?.[id]||{}).some(x=>x.variantId===variant)),{id,variant}));
+ await page.selectOption('select[data-category-filter]','Intro');assert(!await page.evaluate(({id,variant})=>EDITOR_STYLES[id].v4.categories.Intro.roles.meta.some(x=>x.id===variant),{id,variant}));
+ // Apply must modify this very template, never its program style; reopening retains bindings.
+ await page.evaluate(({id,chosen})=>{selectTpl(chosen.tpl);selectedBlockId=chosen.block;renderCanvasTemplate(LIB[chosen.tpl]);renderInspector(LIB[chosen.tpl]);},{id,chosen});
+ await page.click('[data-start]');await page.locator('[data-assign="meta"][data-category="Intro"]').click();await page.click('[data-apply]');
+ assert.equal(await page.evaluate(tid=>LIB[tid].visualStyle,chosen.tpl),'editorial-blue');
+ assert.equal(await page.evaluate(tid=>LIB[tid].editorStyleId,chosen.tpl),id);
+ await page.click('#btnStylesV5');await page.click('#btnStylesV5');
+ assert.equal(await page.locator('[data-style]').inputValue(),id);
+ assert(await page.evaluate(({tid,bid,id})=>!!LIB[tid].v5Bindings[id][bid],{tid:chosen.tpl,bid:chosen.block,id}));
+ // Copy complete program style explicitly from manager, not via Apply.
+ await page.click('#btnStylesV5');await page.evaluate(()=>openStyleMgr());
+ assert(await page.locator('[data-copy-program="editorial-blue"]').isVisible());
+ await page.click('[data-copy-program="editorial-blue"]');
+ const copy=await page.evaluate(id=>{const newId=Object.keys(STYLES).find(k=>k.startsWith('program_'));
+   const all=Object.values(LIB).filter(t=>t.visualStyle===newId);
+   return {id:newId,copies:all.length,selected:selectedId,editor:all.some(t=>t.editorStyleId===id),total:Object.keys(LIB).length};},id);
+ assert.equal(copy.copies,42);assert.equal(copy.total,139);assert(copy.editor);
+ assert.equal(await page.evaluate(()=>Object.values(LIB).filter(t=>t.visualStyle==='editorial-blue').length),42);
+ await page.click('#styleMgrDone');await page.click('[data-view="grid"]');
+ await page.waitForFunction(()=>document.querySelectorAll('.gal-card .sb-gal-page').length===42);
+ assert.equal(await page.locator('.gal-loading').count(),0);
+ const card=page.locator('.gal-card').first();await page.evaluate(()=>window.__firstCard=document.querySelector('.gal-card'));
+ const originalColumns=await page.evaluate(()=>getComputedStyle(document.querySelector('[data-gal-grid]')).gridTemplateColumns.split(' ').length);
+ await page.locator('[data-v6-setting="size"]').fill('180');
+ const smallerColumns=await page.evaluate(()=>getComputedStyle(document.querySelector('[data-gal-grid]')).gridTemplateColumns.split(' ').length);
+ assert(smallerColumns>originalColumns,{originalColumns,smallerColumns});
+ await page.locator('[data-v6-setting="column"]').fill('0');
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('[data-gal-grid]')).columnGap),'0px');
+ await page.locator('[data-v6-setting="row"]').fill('0');
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('[data-gal-grid]')).rowGap),'0px');
+ assert(await page.evaluate(()=>document.querySelector('.gal-card')===window.__firstCard));
+ await page.click('[data-view="single"]');
+ const singleNeutral=await page.evaluate(()=>{const t=Object.values(LIB).find(t=>t.visualStyle==='editorial-blue'&&t.blocks.some(b=>b.kind==='image'&&!b.src));selectTpl(t.id);return getComputedStyle(document.querySelector('.cv-placeholder')).backgroundColor;});
+ assert.equal(singleNeutral,'rgb(215, 217, 221)');
+ await page.reload();assert.equal(await page.evaluate(id=>Object.keys(EDITOR_STYLES[id]?.v4?.categories||{}).length,id),7);
+ assert.equal(await page.evaluate(k=>Object.values(LIB).filter(t=>t.visualStyle===k).length,copy.id),42);
+ // The ordinary template inspector offers the same explicit copy command.
+ await page.evaluate(tid=>selectTpl(tid),copy.selected);assert(await page.locator('#actCopyToProgram').isVisible());
+ await page.click('#actCopyToProgram');
+ assert.equal(await page.evaluate(()=>Object.keys(STYLES).length),4);
+ assert.equal(await page.evaluate(()=>Object.values(LIB).filter(t=>t.visualStyle==='editorial-blue').length),42);
+ // AI import is optional and creates ONLY an editor preset set.
+ await page.click('#btnStylesV5');await page.click('[data-ai-open]');
+ const ai={type:'covers-style',schemaVersion:4,name:'Optional AI',palette:{Primary:'#111111',Secondary:'#555555',Accent:'#ff0000',White:'#ffffff'},typography:{meta:{family:'Inter',weights:[400,700]}},categories:{Intro:{roles:{meta:[{colorToken:'Primary',weight:400},{colorToken:'Accent',weight:700}]}}}};
+ await page.fill('[data-json]',JSON.stringify(ai));await page.click('[data-check]');assert(await page.locator('[data-import]').isEnabled());await page.click('[data-import]');
+ assert.equal(await page.evaluate(()=>Object.keys(STYLES).length),4);
+ assert(await page.evaluate(()=>Object.values(EDITOR_STYLES).some(s=>s.name==='Optional AI')));
+ assert.deepEqual(errors,[]);console.log('v8 browser smoke passed',copy,{originalColumns,smallerColumns});await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

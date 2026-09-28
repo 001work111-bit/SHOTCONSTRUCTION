@@ -1,0 +1,16 @@
+const {chromium}=require('playwright'),assert=require('assert'),path=require('path'),fs=require('fs');
+(async()=>{const browser=await chromium.launch({args:['--no-sandbox']});const a=await browser.newContext({acceptDownloads:true}),p=await a.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ await p.goto('file://'+path.resolve('Sandbox_Styles_v8_WORKING.html'));
+ await p.setInputFiles('#jsFileInput',path.resolve('uploads/portfolio_template_library_all_96.js'));await p.waitForFunction(()=>Object.keys(LIB).length===97);
+ await p.click('#btnStylesV5');await p.evaluate(()=>{styleFilter='editorial-blue';renderLib();renderTopFilterDDs();renderInspector(getActiveTpl());});
+ await p.click('[data-collect]');await p.click('.v5-ai [data-create]');const styleId=await p.evaluate(()=>CoversStyleV5.styleId);
+ await p.click('[data-auto]');
+ const [download]=await Promise.all([p.waitForEvent('download'),p.click('#btnArchiveSave')]);const file=await download.path();const raw=JSON.parse(fs.readFileSync(file,'utf8'));
+ assert(raw.editorStyles?.[styleId]);assert(!raw.styles?.[styleId]);
+ const other=await browser.newContext({acceptDownloads:true});const q=await other.newPage();q.on('pageerror',e=>errors.push(e.message));
+ await q.goto('file://'+path.resolve('Sandbox_Styles_v8_WORKING.html'));await q.setInputFiles('#archiveFile',file);
+ await q.waitForFunction(id=>Object.keys(LIB).length===97&&!!EDITOR_STYLES[id],styleId);
+ const data=await q.evaluate(id=>({program:Object.keys(STYLES),editor:EDITOR_STYLES[id].name,links:Object.values(LIB).filter(t=>t.editorStyleId===id).length,wrong:Object.values(LIB).filter(t=>t.visualStyle===id).length}),styleId);
+ assert(data.links>0);assert.equal(data.wrong,0);assert.deepEqual(data.program.sort(),['cinematic','editorial-blue']);assert.deepEqual(errors,[]);
+ console.log('v8 archive round trip passed',data);await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});
